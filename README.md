@@ -1,5 +1,7 @@
 # GPT-2
 
+**GPT-2** is a *Decoder*-only Transformer architecture and generative model that autoregressively computes output tokens via causal masking and learns language modeling via Unsupervised Learning. It competes with supervised learning approaches while aiming to achieve zero-shot transfer on common NLP tasks.
+
 ## Transformer Architecture
 
 The **Transformer** is a purely attention based architecture developed in the paper *Attention is All You Need* for language modeling and machine translation that avoids the sequential computation problem in RNNs which prevented parallelization.
@@ -41,17 +43,25 @@ $$y_i = \gamma \hat{x}_i + \beta$$
 
 ## GeLU Activation
 
-**Gaussian Error Linear Unit** (**GELU**) activation function aims to smoothly weigh inputs by how likely they are to be positive under a Gaussian distribution. It appears more stochastic and smooth compare to the hard threshold applied by ReLU, with large positive values almost fully passing through, large negative values mostly suppressed, and near zero values partially passing through.
+**Gaussian Error Linear Unit** (**GELU**) activation function aims to smoothly weigh inputs by how likely they are to be positive under a Gaussian distribution. It appears more stochastic and smooth compare to the hard threshold applied by ReLU, with large positive values almost fully passing through, large negative values mostly suppressed, and near zero values partially passing through. It is applied to the hidden layer of the MLP.
 
 The smoothness allows both better gradient flow and prevents the 'Dead Neuron' issue associated with ReLU activation. It is defined as 
 
-$$
+$$\mathrm{GELU}(x) = x \cdot \Phi(x)$$
+
+where $\Phi(x)$ is the cumulative distribution function (CDF) of the standard normal distribution. In practice, an approximation is commonly used:
+
+$$\mathrm{GELU}(x) \approx 0.5x \left(1 + \tanh\left(\sqrt{\frac{2}{\pi}} \left(x + 0.044715x^3\right)\right)\right)$$
+
+## Autoregressive Language Modeling with Top K Random Sampling
+
+Autoregressive Language Modeling predicts an output token using an input sequence, which is then appended to the input sequence and fed back into the model to compute the next token. This is done until the context length is reached or an <EOS> ('End of Sequence') token is reached. The predicted tokens are determined by taking the logits from the output layer (which projected them from $d_model$ to vocab size), applying a softmax function to get the probabilities for every word in the vocabulary, and then randomly sampling from the top K (usually 40) highest probability tokens. Top K random sampling ensures the model produces a different output given the same input, injecting randomness and preventing the same deterministic output from occuring using a Greedy strategy. 
 
 ## Positional Embeddings
 
 ## Byte-Pair Encoding (BPE) Tokenizer
 
-## Autoregressive Language Modeling with Unsupervised Learning
+
 
 ## Top K Random Sampling
 
