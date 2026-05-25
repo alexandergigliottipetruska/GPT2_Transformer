@@ -6,7 +6,7 @@
 
   The **Transformer** is a purely attention based architecture developed in the paper *Attention is All You Need* for language modeling and machine translation that avoids the sequential computation problem in RNNs which prevented parallelization.
 
-It uses an Encoder to convert a sequence of symbol representations to continuous representations, with the output at each layer being fed to the Decoder to autoregressively predict output sequences. 
+It uses an Encoder to convert a sequence of symbol representations to continuous representations, with the output at each layer being fed to the Decoder to autoregressively predict output sequences. One key difference is that GPT-2 uses a **decoder-only** architecture without an Encoder, keeping the Decoder stock while dropping cross-attention.
 
 ## Decoder and Causal Masking 
 
@@ -18,7 +18,7 @@ The self-attention layers use causal masking to attend to earlier positions in t
 
   The **Attention** mechanism models long-range dependencies between inputs and outputs by allowing each token in a sequence to weigh the importance of other tokens. This enables the model to capture contextual and semantic relationships across the sequence.
 
-  In particular, attention uses three learned representations: Queries Q, Keys K, and Values V, which are obtained by linearly projecting the encoder input. The similarity between queries and keys is used to compute attention weights, which determine how much influence each token in the sequence should have when producing the representation of a given token.
+  In particular, attention uses three learned representations: Queries Q, Keys K, and Values V, which are obtained by linearly projecting the input sequence. The similarity between queries and keys is used to compute attention weights, which determine how much influence each token in the sequence should have when producing the representation of a given token.
 
 $$ \mathrm{Attention}(Q, K, V) = \mathrm{softmax}\left(\frac{QK^{T}}{\sqrt{d_k}}\right)V $$
 
@@ -33,7 +33,7 @@ $$\mathrm{where}\text{ }\mathrm{head}_i=\mathrm{Attention}(Q W_i^Q,  K W_i^K,  V
 The causal mask is applied before the softmax to prevent positions from attending to future tokens. 
 
 ## Layer Normalization
-  **Layer Normalization** is used to stabilize and accelerate training normalizing the outputs of each layer to stay within an acceptable range. The mean and variance are computed for the features, not per batch (as in Batch Normalization).
+  **Layer Normalization** is used to stabilize and accelerate training by normalizing the activations of each layer to stay within an acceptable range. The mean and variance are computed for the features, not per batch (as in Batch Normalization).
 and used to normalize the input. Note that the $\epsilon$ is used to prevent division by 0.
 
 $$\hat{x}_i = \frac{x_i - \mu}{\sqrt{\sigma^2 + \epsilon}}$$
@@ -42,9 +42,11 @@ Afterwards, learnable parameters ($\gamma$ and $\beta$) are applied to each feat
 
 $$y_i = \gamma \hat{x}_i + \beta$$
 
+GPT-2 uses **pre-normalization**, applying layer normalization before each sublock and a final one after the last block.
+
 ## GeLU Activation
 
-  **Gaussian Error Linear Unit** (**GELU**) activation function aims to smoothly weigh inputs by how likely they are to be positive under a Gaussian distribution. It appears more stochastic and smooth compare to the hard threshold applied by ReLU, with large positive values almost fully passing through, large negative values mostly suppressed, and near zero values partially passing through. It is applied to the hidden layer of the MLP.
+  **Gaussian Error Linear Unit** (**GELU**) activation function aims to smoothly weigh inputs by how likely they are to be positive under a Gaussian distribution. It appears more stochastic and smooth compared to the hard threshold applied by ReLU, with large positive values almost fully passing through, large negative values mostly suppressed, and near zero values partially passing through. It is applied to the hidden layer of the MLP.
 
 The smoothness allows both better gradient flow and prevents the 'Dead Neuron' issue associated with ReLU activation. It is defined as 
 
