@@ -1,16 +1,16 @@
 import torch
 import torch.nn as nn
-from math import sqrt
+from math import sqrt, pi
 
 class TransformerBlock(nn.Module):
-    def __init__(self, num_layers, batch_size, seq_len, hidden_size, num_heads, inner_size):
+    def __init__(self, num_layers, batch_size, seq_len, hidden_size, num_heads, inner_size, pretrained_weights=None):
         super().__init__()
         self.N = batch_size
         self.seq_len = seq_len
         self.A = num_heads # number of attention heads
         self.num_layers = num_layers # number of layers
         self.H = hidden_size # hidden_size
-        self.droput = nn.Dropout(0.1)
+        self.dropout = nn.Dropout(0.1)
 
         ## Multi-Head Attention
         # Normal distribution with mean 0 and std 0.02 for weights
@@ -26,7 +26,7 @@ class TransformerBlock(nn.Module):
         torch.nn.init.normal_(self.WV, mean=0.0, std=0.02)
         self.bV = nn.Parameter(torch.zeros((hidden_size,))) # (d_model,)
         self.WO = nn.Parameter(torch.empty(hidden_size, hidden_size)) 
-        torch.nn.init.normal_(self.WO, mean=0.0, std=0.02 / sqrt(2 * N))
+        torch.nn.init.normal_(self.WO, mean=0.0, std=0.02 / sqrt(2 * self.num_layers))
         self.bO = nn.Parameter(torch.zeros((hidden_size,))) # (h * d_v), note d_v = d_model
     
         ## Multi-Layer Perceptron (MLP)
@@ -37,62 +37,105 @@ class TransformerBlock(nn.Module):
         self.b1 = nn.Parameter(torch.zeros((inner_size, )))
         self.b2 = nn.Parameter(torch.zeros((hidden_size, )))
 
-        # Create mask
-        self.mask = torch.tril(torch.ones((seq_len, seq_len)), diagonal=1)
-        self.mask = self.mask.masked_fill(self.mask == 0, float("-inf"))
-        self.mask = self.mask.masked_fill(self.mask == 1, 0)
+        self.curr_seq_len = 0
+
+        # Causal Mask
+        self.mask = None
 
         # Layer Normalization
         self.eps = 1e-5
-        self.shift = nn.Parameter(torch.zeros(hidden_size, ))
-        self.scale = nn.Parameter(torch.ones(hidden_size, ))
+        self.shift_1 = nn.Parameter(torch.zeros(hidden_size, ))
+        self.scale_1 = nn.Parameter(torch.ones(hidden_size, ))
+        self.shift_2 = nn.Parameter(torch.zeros(hidden_size, ))
+        self.scale_2 = nn.Parameter(torch.ones(hidden_size, ))
+
+        # Load pre-trained weights
+        if pretrained_weights is not None:
+            # Load in Layer Norm parameters
+            self.scale_1.data = pretrained_weights[0].weight.data
+            self.shift_1.data = pretrained_weights[0].bias.data
+            self.scale_2.data = pretrained_weights[6].weight.data
+            self.shift_2.data = pretrained_weights[6].bias.data
+
+            # Attention weights
+            c_attn_weight = pretrained_weights[2].weight.data
+            c_attn_bias = pretrained_weights[2].bias.data
+
+            WQ, WK, WV = c_attn_weight.split(hidden_size, dim=1)
+            self.WQ.data = WQ
+            self.WK.data = WK
+            self.WV.data = WV
+            self.bQ.data, self.bK.data, self.bV.data = c_attn_bias.split(hidden_size, dim=0)
+
+            self.WO.data = pretrained_weights[3].weight.data
+            self.bO.data = pretrained_weights[3].bias.data
+
+            # MLP weights
+            self.W1.data = pretrained_weights[8].weight.data.T
+            self.b1.data = pretrained_weights[8].bias.data
+            self.W2.data = pretrained_weights[9].weight.data.T
+            self.b2.data = pretrained_weights[9].bias.data
+
 
     def MaskedMultiHeadSelfAttention(self, X):
         # (batch_size, seq_len, hidden_dim)
-        Q = X @ self.WQ + self.bQ 
-        V = X @ self.WV + self.bV 
+        Q = X @ self.WQ + self.bQ
         K = X @ self.WK + self.bK
-        
-        # (batch_size, num_heads, seq_len, hidden_size // num_heads)
-        Q = Q.view(Q.shape[0], self.A, self.seq_len, self.H // self.A)
-        K = K.view(K.shape[0], self.A, self.seq_len, self.H // self.A)
-        V = V.view(V.shape[0], self.A, self.seq_len, self.H // self.A)
-        
-        # Scores are (batch_size, num_heads, seq_len, seq_len)
-        scores = (Q @ K.T / (sqrt(self.H // self.A)))
-        scores_masked = scores + self.mask
-        attn_weights = torch.nn.functional.softmax(scores_masked)
-        attn_weights = self.dropout(attn_weights)
+        V = X @ self.WV + self.bV
 
-        Z = attn_weights @ V
-        Z = torch.view(Z.shape[0], self.seq_len, self.H)
-        O = Z @ self.WO + self.bO
+        ## Linearly project into different subspaces (heads)
+        # (batch_size, num_heads, seq_len, hidden_dim // num_heads)
+        Q = Q.view(Q.shape[0], Q.shape[1], self. A, self.H // self.A).transpose(1, 2)
+        K = K.view(K.shape[0], K.shape[1], self.A, self.H // self.A).transpose(1, 2)
+        V = V.view(V.shape[0], V.shape[1], self.A, self.H // self.A).transpose(1, 2)
+        
+        ## Masked Multi Head Self-Attention
+        # (batch_size, num_heads, seq_len, seq_len)
+        scores = Q @ K.transpose(-2, -1) / sqrt(self.H // self.A)
+        # apply causal masking to prevent tokens from attending to future positions
+        scores = scores + self.mask 
+        # compute attention weights
+        attn_weights = self.dropout(nn.functional.softmax(scores, dim=-1)) @ V
+
+        ## Concatenate output of each head.
+        # (batch_size, seq_len, hidden_size)
+        attn_weights = attn_weights.transpose(1, 2).contiguous().view(attn_weights.shape[0], self.curr_seq_len, self.H)
+
+        O = attn_weights @ self.WO + self.bO
 
         return O
 
     def MLP(self, X):
-        X = self.GeLU(X @ self.W1 + self.b1)
-        X = X @ self.W2 + self.b2
+        X = self.GeLU(X @ self.W1.T + self.b1)
+        X = X @ self.W2.T + self.b2
         return X
         
     def GeLU(self, X):
-        return 0.5 * X * (1 + torch.tanh(torch.sqrt(2 / torch.pi) * (X + 0.044715 * torch.pow(X, 3))))
+        return 0.5 * X * (1 + torch.tanh(sqrt(2 / pi) * (X + 0.044715 * torch.pow(X, 3))))
 
-    def LayerNormalization(self, X):
+    def LayerNormalization(self, X, scale, shift):
         # Calculate mean and variance over feature dimension
         mean = torch.mean(X, dim=-1, keepdim=True)
-        var = torch.var(X, dim=-1, keepdim=True)
+        var = torch.var(X, dim=-1, keepdim=True, unbiased=False)
 
         # Normalize input
         X_normalized = (X - mean) / torch.sqrt(var + self.eps)
         
         # Apply shift and scale
-        y = self.scale * X_normalized + self.shift
+        y = scale * X_normalized + shift
+
+        return y
+    
+    def causal_mask(self, curr_seq_len):
+        self.curr_seq_len = curr_seq_len
+        self.mask = torch.tril(torch.ones((curr_seq_len, curr_seq_len)), diagonal=0)
+        self.mask = self.mask.masked_fill(self.mask == 0, float("-inf"))
+        self.mask = self.mask.masked_fill(self.mask == 1, 0)
 
     def forward(self, X):
-        X1 = self.MaskedMultiHeadSelfAttention(X)
-        X1 = self.LayerNormalization(X + self.dropout(X1))
-        X2 = self.MLP(X1)
-        X2 = self.LayerNormalization(X1 + self.dropout(X2))
+        # X is (batch_size, seq_len, hidden_size)
+        self.causal_mask(X.shape[1])
+        X1 = self.dropout(self.MaskedMultiHeadSelfAttention(self.LayerNormalization(X, self.scale_1, self.shift_1))) + X
+        X2 = self.dropout(self.MLP(self.LayerNormalization(X1, self.scale_2, self.shift_2))) + X1
 
         return X2
