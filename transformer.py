@@ -39,9 +39,9 @@ class GPT2Transformer(nn.Module):
         self.curr_len = 0
         # Default is small. 
         if config is None:
-            self.N = num_layers
-            self.d_model = hidden_size
-            self.h = attention_heads
+            self.N = CONFIG_SMALL["num_layers"]
+            self.d_model = CONFIG_SMALL["hidden_size"]
+            self.h = CONFIG_SMALL["num_heads"]
         elif config == "XL":
             self.N = CONFIG_XL["num_layers"]
             self.d_model = CONFIG_XL["hidden_size"]
