@@ -3,78 +3,84 @@ import torch.nn as nn
 from math import sqrt, pi
 
 class TransformerBlock(nn.Module):
-    def __init__(self, num_layers, batch_size, seq_len, hidden_size, num_heads, inner_size, pretrained_weights=None):
+    def __init__(self, num_layers, batch_size, seq_len, hidden_size, num_heads, inner_size, device, pretrained_weights=None):
         super().__init__()
         self.N = batch_size
         self.seq_len = seq_len
         self.A = num_heads # number of attention heads
         self.num_layers = num_layers # number of layers
         self.H = hidden_size # hidden_size
-        self.dropout = nn.Dropout(0.1)
+        self.dropout = nn.Dropout(0.1).to(device)
 
         ## Multi-Head Attention
         # Normal distribution with mean 0 and std 0.02 for weights
         # For residual layers, 0.02 / sqrt(2 * num_layers) to prevent accumulation of residual 
         # contributes and activations from growing too large.
-        self.WQ = nn.Parameter(torch.empty(hidden_size, hidden_size ))
+        self.WQ = nn.Parameter(torch.empty(hidden_size, hidden_size )).to(device)
         torch.nn.init.normal_(self.WQ, mean=0.0, std=0.02)
-        self.bQ = nn.Parameter(torch.zeros((hidden_size,))) # (d_model,)
-        self.WK = nn.Parameter(torch.empty(hidden_size, hidden_size )) 
+        self.bQ = nn.Parameter(torch.zeros((hidden_size,))).to(device) # (d_model,)
+        self.WK = nn.Parameter(torch.empty(hidden_size, hidden_size )).to(device)
         torch.nn.init.normal_(self.WK, mean=0.0, std=0.02)
-        self.bK = nn.Parameter(torch.zeros((hidden_size,))) # (d_model,)
-        self.WV = nn.Parameter(torch.empty(hidden_size, hidden_size )) 
-        torch.nn.init.normal_(self.WV, mean=0.0, std=0.02)
-        self.bV = nn.Parameter(torch.zeros((hidden_size,))) # (d_model,)
-        self.WO = nn.Parameter(torch.empty(hidden_size, hidden_size)) 
-        torch.nn.init.normal_(self.WO, mean=0.0, std=0.02 / sqrt(2 * self.num_layers))
-        self.bO = nn.Parameter(torch.zeros((hidden_size,))) # (h * d_v), note d_v = d_model
+        self.bK = nn.Parameter(torch.zeros((hidden_size,))).to(device) # (d_model,)
+        self.WV = nn.Parameter(torch.empty(hidden_size, hidden_size )).to(device)
+        torch.nn.init.normal_(self.WV, mean=0.0, std=0.02).to(device)
+        self.bV = nn.Parameter(torch.zeros((hidden_size,))).to(device) # (d_model,)
+        self.WO = nn.Parameter(torch.empty(hidden_size, hidden_size)).to(device) 
+        torch.nn.init.normal_(self.WO, mean=0.0, std=0.02 / sqrt(2 * self.num_layers)).to(device)
+        self.bO = nn.Parameter(torch.zeros((hidden_size,))).to(device) # (h * d_v), note d_v = d_model
     
         ## Multi-Layer Perceptron (MLP)
-        self.W1 = nn.Parameter(torch.empty(inner_size, hidden_size))
+        self.W1 = nn.Parameter(torch.empty(inner_size, hidden_size)).to(device)
         torch.nn.init.normal_(self.W1, mean=0.0, std=0.02)
-        self.W2 = nn.Parameter(torch.empty(hidden_size, inner_size))
+        self.W2 = nn.Parameter(torch.empty(hidden_size, inner_size)).to(device)
         torch.nn.init.normal_(self.W2, mean=0.0, std=0.02 / sqrt(2 * self.num_layers))
-        self.b1 = nn.Parameter(torch.zeros((inner_size, )))
-        self.b2 = nn.Parameter(torch.zeros((hidden_size, )))
+        self.b1 = nn.Parameter(torch.zeros((inner_size, ))).to(device)
+        self.b2 = nn.Parameter(torch.zeros((hidden_size, ))).to(device)
 
         self.curr_seq_len = 0
 
         # Causal Mask
         self.mask = None
 
+        self.device = device
+
         # Layer Normalization
         self.eps = 1e-5
-        self.shift_1 = nn.Parameter(torch.zeros(hidden_size, ))
-        self.scale_1 = nn.Parameter(torch.ones(hidden_size, ))
-        self.shift_2 = nn.Parameter(torch.zeros(hidden_size, ))
-        self.scale_2 = nn.Parameter(torch.ones(hidden_size, ))
+        self.shift_1 = nn.Parameter(torch.zeros(hidden_size, )).to(device)
+        self.scale_1 = nn.Parameter(torch.ones(hidden_size, )).to(device)
+        self.shift_2 = nn.Parameter(torch.zeros(hidden_size, )).to(device)
+        self.scale_2 = nn.Parameter(torch.ones(hidden_size, )).to(device)
 
         # Load pre-trained weights
         if pretrained_weights is not None:
             # Load in Layer Norm parameters
-            self.scale_1.data = pretrained_weights[0].weight.data
-            self.shift_1.data = pretrained_weights[0].bias.data
-            self.scale_2.data = pretrained_weights[6].weight.data
-            self.shift_2.data = pretrained_weights[6].bias.data
+            self.scale_1.data = pretrained_weights[0].weight.data.to(device)
+            self.shift_1.data = pretrained_weights[0].bias.data.to(device)
+            self.scale_2.data = pretrained_weights[6].weight.data.to(device)
+            self.shift_2.data = pretrained_weights[6].bias.data.to(device)
 
             # Attention weights
-            c_attn_weight = pretrained_weights[2].weight.data
-            c_attn_bias = pretrained_weights[2].bias.data
+            c_attn_weight = pretrained_weights[2].weight.data.to(device)
+            c_attn_bias = pretrained_weights[2].bias.data.to(device)
 
             WQ, WK, WV = c_attn_weight.split(hidden_size, dim=1)
-            self.WQ.data = WQ
-            self.WK.data = WK
-            self.WV.data = WV
+            self.WQ.data = WQ.to(device)
+            self.WK.data = WK.to(device)
+            self.WV.data = WV.to(device)
             self.bQ.data, self.bK.data, self.bV.data = c_attn_bias.split(hidden_size, dim=0)
 
-            self.WO.data = pretrained_weights[3].weight.data
-            self.bO.data = pretrained_weights[3].bias.data
+            self.WO.data = pretrained_weights[3].weight.data.to(device)
+            self.bO.data = pretrained_weights[3].bias.data.to(device)
+
+            self.bQ.to(device)
+            self.bK.to(device)
+            self.bV.to(device)
 
             # MLP weights
-            self.W1.data = pretrained_weights[8].weight.data.T
-            self.b1.data = pretrained_weights[8].bias.data
-            self.W2.data = pretrained_weights[9].weight.data.T
-            self.b2.data = pretrained_weights[9].bias.data
+            self.W1.data = pretrained_weights[8].weight.data.T.to(device)
+            self.b1.data = pretrained_weights[8].bias.data.to(device)
+            self.W2.data = pretrained_weights[9].weight.data.T.to(device)
+            self.b2.data = pretrained_weights[9].bias.data.to(device)
 
 
     def MaskedMultiHeadSelfAttention(self, X):
@@ -128,7 +134,7 @@ class TransformerBlock(nn.Module):
     
     def causal_mask(self, curr_seq_len):
         self.curr_seq_len = curr_seq_len
-        self.mask = torch.tril(torch.ones((curr_seq_len, curr_seq_len)), diagonal=0)
+        self.mask = torch.tril(torch.ones((curr_seq_len, curr_seq_len)), diagonal=0).to(self.device)
         self.mask = self.mask.masked_fill(self.mask == 0, float("-inf"))
         self.mask = self.mask.masked_fill(self.mask == 1, 0)
 
