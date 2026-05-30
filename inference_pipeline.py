@@ -13,6 +13,9 @@ id_to_token_vocab = {v: k for k, v in vocab.items()}
 
 
 def inference_pipeline(model, tokenizer, input_text, vocab, k=40):
+    """
+    Perform Next Token Prediction with Top K Random Sampling.
+    """
     # Set model to evaluation mode
     model.eval()
 

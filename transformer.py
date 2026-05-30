@@ -6,6 +6,9 @@ from transformers import GPT2Tokenizer, GPT2LMHeadModel
 from config import CONFIG_SMALL, CONFIG_XL
 
 def extract_pretrained_weights(config, num_layers):
+    """
+    Extract pretrained weights for different model configurations.
+    """
     print(num_layers)
     if config == "XL":  
         model = GPT2LMHeadModel.from_pretrained('gpt2-xl')

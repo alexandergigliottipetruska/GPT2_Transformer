@@ -84,6 +84,9 @@ class TransformerBlock(nn.Module):
 
 
     def MaskedMultiHeadSelfAttention(self, X):
+        """ 
+        Applies Masked Multi Head Self-Attention with causal masking to the input.
+        """
         # (batch_size, seq_len, hidden_dim)
         Q = X @ self.WQ + self.bQ
         K = X @ self.WK + self.bK
@@ -112,14 +115,23 @@ class TransformerBlock(nn.Module):
         return O
 
     def MLP(self, X):
+        """
+        Standard Multi-Layer Perceptron 
+        """
         X = self.GeLU(X @ self.W1.T + self.b1)
         X = X @ self.W2.T + self.b2
         return X
         
     def GeLU(self, X):
+        """
+        Applies GELU (Gaussian Error Linear Unit) activation function 
+        """
         return 0.5 * X * (1 + torch.tanh(sqrt(2 / pi) * (X + 0.044715 * torch.pow(X, 3))))
 
     def LayerNormalization(self, X, scale, shift):
+        """
+        Applies Layer Normalization to input, performing a shift and scale operation.
+        """
         # Calculate mean and variance over feature dimension
         mean = torch.mean(X, dim=-1, keepdim=True)
         var = torch.var(X, dim=-1, keepdim=True, unbiased=False)
@@ -133,6 +145,9 @@ class TransformerBlock(nn.Module):
         return y
     
     def causal_mask(self, curr_seq_len):
+        """
+        Creates causal mask given the current sequence length.
+        """
         self.curr_seq_len = curr_seq_len
         self.mask = torch.tril(torch.ones((curr_seq_len, curr_seq_len)), diagonal=0).to(self.device)
         self.mask = self.mask.masked_fill(self.mask == 0, float("-inf"))
