@@ -1,6 +1,14 @@
 # GPT-2
 
-  **GPT-2** is a *Decoder*-only Transformer architecture and generative model that autoregressively computes output tokens via causal masking and learns language modeling via Unsupervised Learning. It competes with supervised learning approaches while aiming to achieve zero-shot transfer on common NLP tasks.
+  **GPT-2** is a *Decoder*-only Transformer architecture and generative model that autoregressively computes output tokens via causal masking and learns language modeling via Unsupervised Learning. It competes with supervised learning approaches while aiming to achieve zero-shot transfer on common NLP tasks. Below are some examples the model's outputs:
+
+**Prompt:** A wandering magician
+
+**Generation:** found his life in chaos. When a young boy is kidnapped and forced to battle in a haunted labyrinth, the only way for him to be saved is for him to leave his castle and return to the surface. In the darkness of the night, a monster takes shape and attacks the village. Only the magical guardian Befool can stop it.
+
+**Prompt:** Hello, I'm Alexander
+
+**Generation:** . I come from the planet of Alara and I have lived for more than 4000 years. To a first approximation I would say the history on Alara would begin and end with me. Although I might have lived on Earth for a thousand years, that doesn't change what I was doing on Earth. My time on Earth was full of adventure from a youth of about 10 to my late 40s.
 
 ## Transformer Architecture
 
